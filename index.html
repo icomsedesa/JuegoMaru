@@ -123,6 +123,295 @@
   };
 
   function sincronizarEstado() {
+    supabaseClient.channel('estado_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'estado_juego' }, payload => {
+        procesarEstado(payload.new);
+      }).subscribe();
+
+    supabaseClient.from('estado_juego').select('*').eq('id', 1).maybeSingle().then(({ data }) => {
+      if (data) procesarEstado(data);
+    });
+
+    supabaseClient.channel('respuestas_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'respuestas' }, () => {
+        cargarRespuestasActuales();
+      }).subscribe();
+
+    supabaseClient.channel('jugadores_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores' }, () => {
+        contarJugadores();
+      }).subscribe();
+  }
+
+  async function procesarEstado(estado) {
+    estadoActual = estado;
+
+    let pregunta = null;
+    if (estado && estado.pregunta_actual_id) {
+      const { data } = await supabaseClient.from('preguntas').select('*').eq('id', estado.pregunta_actual_id).single();
+      pregunta = data;
+    }
+
+    if (pregunta && pregunta.id !== ultimaPreguntaId) {
+      ultimaPreguntaId = pregunta.id;
+      haRespondido = false;
+      document.getElementById('numero-respuesta').value = '';
+      document.getElementById('msj-jugador').innerText = '';
+    }
+
+    // Vista Jugador
+    const boxJugador = document.getElementById('box-pregunta-jugador');
+    const btnEnviar = document.getElementById('btn-enviar');
+
+    if (estado.estado === 'finalizado') {
+      boxJugador.innerHTML = "🎉 ¡El juego ha finalizado! Consultá la pantalla principal para ver los resultados.";
+      btnEnviar.disabled = true;
+    } else if (!pregunta) {
+      boxJugador.innerText = "Esperando que el administrador active la siguiente pregunta...";
+      document.getElementById('msj-jugador').innerText = "";
+    } else if (estado.estado === 'jugando') {
+      boxJugador.innerText = `❓ ${pregunta.texto}`;
+      btnEnviar.disabled = haRespondido;
+    } else if (estado.estado === 'revelando') {
+      boxJugador.innerText = `❓ ${pregunta.texto} (Respuesta Real: ${pregunta.valor_real})`;
+      btnEnviar.disabled = true;
+    }
+
+    // Vista Admin
+    const boxAdmin = document.getElementById('admin-pregunta-activa');
+    if (pregunta) {
+      boxAdmin.innerText = `❓ ${pregunta.texto} | Respuesta Real: ${pregunta.valor_real}`;
+    } else if (estado.estado === 'finalizado') {
+      boxAdmin.innerText = "🏁 Juego Finalizado";
+    } else {
+      boxAdmin.innerText = "Sin pregunta activa en la partida";
+    }
+
+    cargarRespuestasActuales();
+  }
+
+  // --- LÓGICA JUGADOR ---
+  async function registrarJugador() {
+    const nombre = document.getElementById('nombre-jugador').value.trim();
+    if (!nombre) return alert('Ingresá tu apodo');
+    miNombre = nombre;
+
+    await supabaseClient.from('jugadores').upsert([{ nombre: miNombre }]);
+
+    document.getElementById('mi-nombre').innerText = `Jugador: ${miNombre}`;
+    document.getElementById('form-registro').style.display = 'none';
+    document.getElementById('panel-juego-jugador').style.display = 'block';
+  }
+
+  async function enviarRespuesta() {
+    const numeroInput = document.getElementById('numero-respuesta');
+    const numero = parseFloat(numeroInput.value);
+
+    if (isNaN(numero)) return alert('Ingresá un número válido');
+    if (!estadoActual || !estadoActual.pregunta_actual_id) return alert('No hay pregunta activa');
+
+    const { error } = await supabaseClient.from('respuestas').insert([{
+      jugador: miNombre,
+      numero: numero,
+      pregunta_id: estadoActual.pregunta_actual_id,
+      es_ganador: false
+    }]);
+
+    if (!error) {
+      haRespondido = true;
+      document.getElementById('btn-enviar').disabled = true;
+      document.getElementById('msj-jugador').innerText = "✅ Respuesta enviada. Esperando resultados...";
+    } else {
+      alert("Error al enviar la respuesta.");
+    }
+  }
+
+  // --- LÓGICA ADMIN ---
+  async function cargarAdmin() {
+    const { data } = await supabaseClient.from('preguntas').select('*').order('id', { ascending: true });
+    preguntasBanco = data || [];
+    renderizarPreguntasAdmin();
+    cargarRespuestasActuales();
+    contarJugadores();
+  }
+
+  async function contarJugadores() {
+    const { count } = await supabaseClient.from('jugadores').select('*', { count: 'exact', head: true });
+    totalJugadores = count || 0;
+    renderizarRespuestasAdmin();
+  }
+
+  async function guardarPregunta() {
+    const texto = document.getElementById('nueva-pregunta').value.trim();
+    const valor_real = parseFloat(document.getElementById('nuevo-valor').value);
+    if (!texto || isNaN(valor_real)) return alert('Completá los campos');
+
+    const { error } = await supabaseClient.from('preguntas').insert([{ texto, valor_real, seleccionada: true }]);
+    if (error) return alert("Error al guardar: " + error.message);
+
+    document.getElementById('nueva-pregunta').value = '';
+    document.getElementById('nuevo-valor').value = '';
+    cargarAdmin();
+  }
+
+  function renderizarPreguntasAdmin() {
+    const lista = document.getElementById('lista-preguntas');
+    lista.innerHTML = preguntasBanco.map(p => `
+      <li>
+        <span><strong>${p.texto}</strong> (Real: ${p.valor_real})</span>
+        <input type="checkbox" class="checkbox-custom" ${p.seleccionada ? 'checked' : ''} onchange="toggleSeleccion(${p.id}, this.checked)">
+      </li>
+    `).join('');
+  }
+
+  async function toggleSeleccion(id, checked) {
+    await supabaseClient.from('preguntas').update({ seleccionada: checked }).eq('id', id);
+  }
+
+  async function iniciarJuego() {
+    const { data } = await supabaseClient.from('preguntas').select('*').eq('seleccionada', true).order('id', { ascending: true });
+    if (!data || data.length === 0) return alert('Atención: Tildá al menos un casillero para iniciar.');
+
+    // Limpiar todas las respuestas del juego anterior
+    await supabaseClient.from('respuestas').delete().neq('id', 0);
+
+    lanzarPreguntaEspecifica(data[0].id, 0);
+  }
+
+  async function siguientePregunta() {
+    const { data } = await supabaseClient.from('preguntas').select('*').eq('seleccionada', true).order('id', { ascending: true });
+    if (!data || data.length === 0) return alert('No hay preguntas seleccionadas.');
+
+    let siguienteIndice = (estadoActual ? estadoActual.indice_pregunta : 0) + 1;
+
+    if (siguienteIndice >= data.length) {
+      await supabaseClient.from('estado_juego').update({ pregunta_actual_id: null, estado: 'finalizado', indice_pregunta: 0 }).eq('id', 1);
+      mostrarTablaGeneral();
+      return;
+    }
+
+    lanzarPreguntaEspecifica(data[siguienteIndice].id, siguienteIndice);
+  }
+
+  async function lanzarPreguntaEspecifica(preguntaId, indice) {
+    document.getElementById('resultado').innerHTML = '';
+    await supabaseClient.from('estado_juego').update({
+      pregunta_actual_id: preguntaId,
+      estado: 'jugando',
+      indice_pregunta: indice
+    }).eq('id', 1);
+  }
+
+  async function cargarRespuestasActuales() {
+    if (!estadoActual || !estadoActual.pregunta_actual_id) return;
+    const { data } = await supabaseClient.from('respuestas').select('*').eq('pregunta_id', estadoActual.pregunta_actual_id);
+    respuestasLocales = data || [];
+    renderizarRespuestasAdmin();
+  }
+
+  function renderizarRespuestasAdmin() {
+    const countSpan = document.getElementById('respuestas-count');
+    const respondieron = respuestasLocales.length;
+
+    if (totalJugadores > 0 && respondieron >= totalJugadores) {
+      countSpan.innerHTML = `${respondieron} de ${totalJugadores} <span style="color:#4ade80; font-weight:bold;">🟢 ¡Todos respondieron!</span>`;
+    } else {
+      countSpan.innerText = `${respondieron} / ${totalJugadores} registrados`;
+    }
+
+    document.getElementById('lista-respuestas').innerHTML = respuestasLocales
+      .map(r => `<li><span>${r.jugador}</span> <strong>${r.numero}</strong></li>`).join('');
+  }
+
+  async function revelarGanador() {
+    if (!estadoActual || !estadoActual.pregunta_actual_id) return alert('No hay pregunta activa');
+
+    const { data: preg } = await supabaseClient.from('preguntas').select('valor_real').eq('id', estadoActual.pregunta_actual_id).single();
+    const valorReal = preg.valor_real;
+
+    await supabaseClient.from('estado_juego').update({ estado: 'revelando' }).eq('id', 1);
+
+    const validos = respuestasLocales.filter(r => r.numero <= valorReal);
+
+    if (validos.length > 0) {
+      validos.sort((a, b) => b.numero - a.numero);
+      const ganadorRonda = validos[0];
+
+      // Marcar al ganador en Supabase para sumar 1 punto
+      await supabaseClient.from('respuestas').update({ es_ganador: true }).eq('id', ganadorRonda.id);
+    }
+
+    // Mostrar Tabla Acumulada
+    await mostrarTablaGeneral(valorReal);
+  }
+
+  async function mostrarTablaGeneral(valorRealActual = null) {
+    // Obtener TODAS las respuestas del juego
+    const { data: todasRespuestas } = await supabaseClient.from('respuestas').select('*');
+    const { data: listaJugadores } = await supabaseClient.from('jugadores').select('*');
+
+    // Calcular puntos totales por jugador
+    let puntuaciones = {};
+    (listaJugadores || []).forEach(j => puntuaciones[j.nombre] = 0);
+
+    (todasRespuestas || []).forEach(r => {
+      if (r.es_ganador) {
+        puntuaciones[r.jugador] = (puntuaciones[r.jugador] || 0) + 1;
+      }
+    });
+
+    // Ordenar de mayor a menor puntaje
+    let ranking = Object.keys(puntuaciones).map(nombre => ({
+      nombre,
+      puntos: puntuaciones[nombre]
+    })).sort((a, b) => b.puntos - a.puntos);
+
+    let htmlTabla = `
+      <div class="winner" style="background:#0f172a; border: 2px solid #22c55e;">
+        <h3 style="margin:0 0 10px 0; color:#4ade80;">📊 TABLA DE POSICIONES GENERAL</h3>
+        <table style="width:100%; border-collapse: collapse; text-align:left;">
+          <tr style="border-bottom: 1px solid #334155;">
+            <th style="padding: 8px;">Posición</th>
+            <th style="padding: 8px;">Jugador</th>
+            <th style="padding: 8px; text-align:right;">Puntos Total</th>
+          </tr>
+          ${ranking.map((j, idx) => `
+            <tr style="border-bottom: 1px solid #1e293b; ${idx === 0 ? 'color:#facc15; font-weight:bold;' : ''}">
+              <td style="padding: 8px;">${idx === 0 ? '🥇 1°' : idx === 1 ? '🥈 2°' : idx === 2 ? '🥉 3°' : (idx + 1) + '°'}</td>
+              <td style="padding: 8px;">${j.nombre}</td>
+              <td style="padding: 8px; text-align:right;">${j.puntos} pts</td>
+            </tr>
+          `).join('')}
+        </table>
+      </div>
+    `;
+
+    document.getElementById('resultado').innerHTML = htmlTabla;
+  }
+</script>
+  
+  let miNombre = "";
+  let estadoActual = null;
+  let preguntasBanco = [];
+  let respuestasLocales = [];
+  let totalJugadores = 0;
+  let ultimaPreguntaId = null;
+  let haRespondido = false;
+
+  function mostrarVista(vistaId) {
+    document.getElementById('vista-menu').style.display = 'none';
+    document.getElementById('vista-jugador').style.display = 'none';
+    document.getElementById('vista-admin').style.display = 'none';
+    document.getElementById(vistaId).style.display = 'block';
+
+    if (vistaId === 'vista-admin') cargarAdmin();
+  }
+
+  window.onload = () => {
+    sincronizarEstado();
+  };
+
+  function sincronizarEstado() {
     // Escuchar estado
     supabaseClient.channel('estado_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'estado_juego' }, payload => {
