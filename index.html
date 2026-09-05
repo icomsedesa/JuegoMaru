@@ -7,199 +7,272 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body { font-family: system-ui, sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
-    .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 500px; margin: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 550px; margin: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
     input { width: 80%; padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #334155; font-size: 16px; background: #0f172a; color: white; text-align: center; }
     button { background: #2563eb; color: white; border: none; padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; margin: 8px 0; width: 85%; }
     button:hover { background: #1d4ed8; }
+    button:disabled { background: #475569; cursor: not-allowed; }
     .btn-secondary { background: #475569; font-size: 14px; width: auto; padding: 8px 16px; }
     .btn-danger { background: #dc2626; }
     .btn-success { background: #16a34a; }
     .winner { font-size: 22px; color: #4ade80; margin-top: 15px; font-weight: bold; background: #064e3b; padding: 15px; border-radius: 8px; }
     ul { list-style: none; padding: 0; text-align: left; }
     li { background: #334155; margin: 6px 0; padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
-    .pregunta-box { background: #1e293b; border: 2px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size: 20px; }
+    .pregunta-box { background: #0f172a; border: 2px solid #3b82f6; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 20px; }
+    .status-pill { background: #334155; padding: 4px 12px; border-radius: 20px; font-size: 14px; }
   </style>
 </head>
 <body>
 
+  <!-- 1. MENÚ PRINCIPAL -->
   <div id="vista-menu" class="card">
     <h1>🎯 Sin Pasarse</h1>
-    <p>Elegí cómo querés ingresar:</p>
+    <p>Elegí cómo ingresar:</p>
     <button onclick="mostrarVista('vista-jugador')" style="font-size: 20px; padding: 15px;">🎮 JUGAR</button>
     <br><br>
     <button onclick="mostrarVista('vista-admin')" class="btn-secondary">⚙️ Administración del Juego</button>
   </div>
 
+  <!-- 2. VISTA JUGADOR -->
   <div id="vista-jugador" class="card" style="display:none;">
     <button onclick="mostrarVista('vista-menu')" class="btn-secondary">← Volver al Menú</button>
     
-    <div id="box-pregunta-jugador" class="pregunta-box" style="margin-top: 15px;">
-      Esperando que el administrador active una pregunta...
+    <!-- Login de jugador -->
+    <div id="form-registro" style="margin-top: 15px;">
+      <h3>Ingresá a la sala</h3>
+      <input type="text" id="nombre-jugador" placeholder="Tu Nombre / Apodo">
+      <button onclick="registrarJugador()">Unirme al Juego</button>
     </div>
 
-    <input type="text" id="nombre" placeholder="Tu Nombre / Apodo">
-    <input type="number" id="numero" placeholder="Tu Respuesta (Número)">
-    <button onclick="enviarRespuesta()">Enviar Respuesta</button>
-    <p id="msj-jugador" style="color: #60a5fa;"></p>
+    <!-- Pantalla de Juego en vivo -->
+    <div id="panel-juego-jugador" style="display:none;">
+      <p><span class="status-pill" id="mi-nombre"></span></p>
+      
+      <div id="box-pregunta-jugador" class="pregunta-box">
+        Esperando que el administrador inicie...
+      </div>
+
+      <div id="controles-respuesta">
+        <input type="number" id="numero-respuesta" placeholder="Tu Respuesta (Número)">
+        <button id="btn-enviar" onclick="enviarRespuesta()">Enviar Respuesta</button>
+      </div>
+
+      <p id="msj-jugador" style="color: #60a5fa; font-weight: bold;"></p>
+    </div>
   </div>
 
+  <!-- 3. VISTA ADMINISTRACIÓN -->
   <div id="vista-admin" class="card" style="display:none; max-width: 650px;">
     <button onclick="mostrarVista('vista-menu')" class="btn-secondary">← Volver al Menú</button>
     <h2>⚙️ Panel de Administración</h2>
 
+    <!-- Crear Pregunta -->
     <div style="background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-      <h3>Crear Nueva Pregunta</h3>
-      <input type="text" id="nueva-pregunta" placeholder="Ej: ¿Cuántos escalones tiene la Torre Eiffel?">
-      <input type="number" id="nuevo-valor" placeholder="Respuesta Real (Ej: 1665)">
+      <h3>1. Banco de Preguntas</h3>
+      <input type="text" id="nueva-pregunta" placeholder="Ej: ¿Cuántos habitantes tiene Argentina?">
+      <input type="number" id="nuevo-valor" placeholder="Respuesta Real (Ej: 46)">
       <button onclick="guardarPregunta()" class="btn-success">➕ Guardar Pregunta</button>
     </div>
 
-    <h3>Preguntas Cargadas</h3>
+    <h3>Preguntas Creadas</h3>
     <ul id="lista-preguntas"></ul>
 
     <hr style="border-color: #334155; margin: 20px 0;">
 
-    <h3>Control de Ronda Activa</h3>
-    <div id="pregunta-activa-admin" class="pregunta-box">Ninguna pregunta activa</div>
-    <button onclick="calcularGanador()">🔥 Revelar Ganador</button>
-    <button onclick="limpiarRespuestas()" class="btn-danger">🔄 Limpiar Respuestas Recibidas</button>
+    <!-- Control del Juego -->
+    <h3>2. Control del Juego en Vivo</h3>
+    <div id="admin-pregunta-activa" class="pregunta-box">Sin pregunta activa</div>
+
+    <div style="display: flex; gap: 10px; justify-content: center;">
+      <button onclick="revelarGanador()" class="btn-success">🔥 Revelar Ganador</button>
+      <button onclick="siguientePregunta()" class="btn-secondary">➡️ Siguiente Pregunta</button>
+    </div>
 
     <div id="resultado"></div>
 
-    <h3>Respuestas Recibidas (<span id="count">0</span>)</h3>
+    <h3>Respuestas Recibidas (<span id="respuestas-count">0</span>)</h3>
     <ul id="lista-respuestas"></ul>
   </div>
 
   <script>
     // --- CONFIGURACIÓN SUPABASE ---
-    const SUPABASE_URL = "https://nwbgghnnviawepfnqktv.supabase.co";
-    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53YmdnaG5udmlhd2VwZm5xa3R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MTI4NzMsImV4cCI6MjEwMDk4ODg3M30.tk5dbetd7qxZ0xh1vZLQe71nKdGFeAO65iBZ7xUirCE";
+    const SUPABASE_URL = "TU_SUPABASE_URL";
+    const SUPABASE_KEY = "TU_SUPABASE_ANON_KEY";
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    let preguntaActual = null;
+    let miNombre = "";
+    let estadoActual = null;
+    let preguntasBanco = [];
     let respuestasLocales = [];
+    let haRespondido = false;
 
-    // Cambiar de vista
     function mostrarVista(vistaId) {
       document.getElementById('vista-menu').style.display = 'none';
       document.getElementById('vista-jugador').style.display = 'none';
       document.getElementById('vista-admin').style.display = 'none';
       document.getElementById(vistaId).style.display = 'block';
 
-      if (vistaId === 'vista-admin') cargarPreguntasAdmin();
+      if (vistaId === 'vista-admin') cargarAdmin();
     }
 
-    // Inicializar listeners en tiempo real
     window.onload = () => {
-      escucharPreguntaActiva();
-      escucharRespuestas();
+      sincronizarEstado();
     };
 
-    // --- LÓGICA DE PREGUNTAS (ADMIN) ---
+    // --- SINCRONIZACIÓN EN TIEMPO REAL ---
+    function sincronizarEstado() {
+      // Escuchar cambios en la tabla de estado
+      supabaseClient.channel('estado_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'estado_juego' }, payload => {
+          procesarEstado(payload.new);
+        }).subscribe();
+
+      // Cargar estado inicial
+      supabaseClient.from('estado_juego').select('*, preguntas(*)').eq('id', 1).single().then(({ data }) => {
+        if (data) procesarEstado(data);
+      });
+
+      // Escuchar respuestas entrantes
+      supabaseClient.channel('respuestas_changes')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'respuestas' }, payload => {
+          respuestasLocales.push(payload.new);
+          renderizarRespuestasAdmin();
+        }).subscribe();
+    }
+
+    async function procesarEstado(estado) {
+      estadoActual = estado;
+
+      // Obtener datos de la pregunta actual si existe
+      let pregunta = null;
+      if (estado.pregunta_actual_id) {
+        const { data } = await supabaseClient.from('preguntas').select('*').eq('id', estado.pregunta_actual_id).single();
+        pregunta = data;
+      }
+
+      // Actualizar Vista Jugador
+      const boxJugador = document.getElementById('box-pregunta-jugador');
+      const btnEnviar = document.getElementById('btn-enviar');
+
+      if (!pregunta) {
+        boxJugador.innerText = "Esperando que el administrador active la siguiente pregunta...";
+        document.getElementById('msj-jugador').innerText = "";
+      } else if (estado.estado === 'jugando') {
+        boxJugador.innerText = `❓ ${pregunta.texto}`;
+        if (!haRespondido) {
+          btnEnviar.disabled = false;
+          document.getElementById('msj-jugador').innerText = "";
+        }
+      } else if (estado.estado === 'revelando') {
+        boxJugador.innerText = `❓ ${pregunta.texto} (Respuesta Real: ${pregunta.valor_real})`;
+      }
+
+      // Actualizar Vista Admin
+      const boxAdmin = document.getElementById('admin-pregunta-activa');
+      if (pregunta) {
+        boxAdmin.innerText = `❓ ${pregunta.texto} | Respuesta Real: ${pregunta.valor_real}`;
+      } else {
+        boxAdmin.innerText = "Sin pregunta activa";
+      }
+    }
+
+    // --- LÓGICA JUGADOR ---
+    function registrarJugador() {
+      const nombre = document.getElementById('nombre-jugador').value.trim();
+      if (!nombre) return alert('Ingresá tu apodo');
+      miNombre = nombre;
+      document.getElementById('mi-nombre').innerText = `Jugador: ${miNombre}`;
+      document.getElementById('form-registro').style.display = 'none';
+      document.getElementById('panel-juego-jugador').style.display = 'block';
+    }
+
+    async function enviarRespuesta() {
+      const numero = parseFloat(document.getElementById('numero-respuesta').value);
+      if (isNaN(numero)) return alert('Ingresá un número válido');
+      if (!estadoActual || !estadoActual.pregunta_actual_id) return alert('No hay pregunta activa');
+
+      const { error } = await supabaseClient.from('respuestas').insert([{
+        jugador: miNombre,
+        numero: numero,
+        pregunta_id: estadoActual.pregunta_actual_id
+      }]);
+
+      if (!error) {
+        haRespondido = true;
+        document.getElementById('btn-enviar').disabled = true;
+        document.getElementById('msj-jugador').innerText = "✅ Respuesta registrada. Esperando a los demás...";
+      }
+    }
+
+    // --- LÓGICA ADMIN ---
+    async function cargarAdmin() {
+      const { data } = await supabaseClient.from('preguntas').select('*').order('id', { ascending: true });
+      preguntasBanco = data || [];
+      renderizarPreguntasAdmin();
+      cargarRespuestasActuales();
+    }
+
     async function guardarPregunta() {
       const texto = document.getElementById('nueva-pregunta').value.trim();
       const valor_real = parseFloat(document.getElementById('nuevo-valor').value);
+      if (!texto || isNaN(valor_real)) return alert('Completá los campos');
 
-      if (!texto || isNaN(valor_real)) return alert('Completá la pregunta y su valor real.');
-
-      await supabaseClient.from('preguntas').insert([{ texto, valor_real, activa: false }]);
+      await supabaseClient.from('preguntas').insert([{ texto, valor_real }]);
       document.getElementById('nueva-pregunta').value = '';
       document.getElementById('nuevo-valor').value = '';
-      cargarPreguntasAdmin();
+      cargarAdmin();
     }
 
-    async function cargarPreguntasAdmin() {
-      const { data } = await supabaseClient.from('preguntas').select('*').order('id', { ascending: true });
+    function renderizarPreguntasAdmin() {
       const lista = document.getElementById('lista-preguntas');
-      
-      lista.innerHTML = (data || []).map(p => `
+      lista.innerHTML = preguntasBanco.map(p => `
         <li>
           <span><strong>${p.texto}</strong> (Real: ${p.valor_real})</span>
-          <button onclick="activarPregunta(${p.id}, '${p.texto}', ${p.valor_real})" class="btn-success" style="width:auto; padding:5px 10px; margin:0;">
-            ${p.activa ? '✅ Activa' : '🚀 Lanza'}
+          <button onclick="lanzarPregunta(${p.id})" class="btn-success" style="width:auto; padding:5px 12px; margin:0;">
+            🚀 Lanzar a Todos
           </button>
         </li>
       `).join('');
     }
 
-    async function activarPregunta(id, texto, valorReal) {
-      // Desactivar todas y activar la seleccionada
-      await supabaseClient.from('preguntas').update({ activa: false }).neq('id', 0);
-      await supabaseClient.from('preguntas').update({ activa: true }).eq('id', id);
-      
-      limpiarRespuestas();
-      cargarPreguntasAdmin();
+    async function lanzarPregunta(preguntaId) {
+      // Limpiar respuestas anteriores en la base de datos
+      await supabaseClient.from('respuestas').delete().neq('id', 0);
+      respuestasLocales = [];
+      haRespondido = false;
+      document.getElementById('resultado').innerHTML = '';
+      document.getElementById('numero-respuesta').value = '';
+      renderizarRespuestasAdmin();
+
+      // Cambiar estado global a 'jugando' con la nueva pregunta
+      await supabaseClient.from('estado_juego').update({
+        pregunta_actual_id: preguntaId,
+        estado: 'jugando'
+      }).eq('id', 1);
     }
 
-    function escucharPreguntaActiva() {
-      // Cargar pregunta activa inicial
-      supabaseClient.from('preguntas').select('*').eq('activa', true).then(({ data }) => {
-        if (data && data.length > 0) actualizarPreguntaEnPantalla(data[0]);
-      });
-
-      // Escuchar cambios
-      supabaseClient.channel('preguntas_changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'preguntas' }, () => {
-          supabaseClient.from('preguntas').select('*').eq('activa', true).then(({ data }) => {
-            if (data && data.length > 0) actualizarPreguntaEnPantalla(data[0]);
-            else actualizarPreguntaEnPantalla(null);
-          });
-        })
-        .subscribe();
+    async function cargarRespuestasActuales() {
+      const { data } = await supabaseClient.from('respuestas').select('*');
+      respuestasLocales = data || [];
+      renderizarRespuestasAdmin();
     }
 
-    function actualizarPreguntaEnPantalla(p) {
-      preguntaActual = p;
-      const txtJugador = document.getElementById('box-pregunta-jugador');
-      const txtAdmin = document.getElementById('pregunta-activa-admin');
-
-      if (p) {
-        txtJugador.innerText = `❓ ${p.texto}`;
-        txtAdmin.innerText = `❓ ${p.texto} (Valor Real: ${p.valor_real})`;
-      } else {
-        txtJugador.innerText = 'Esperando que el administrador active una pregunta...';
-        txtAdmin.innerText = 'Ninguna pregunta activa';
-      }
-    }
-
-    // --- LÓGICA DE RESPUESTAS ---
-    async function enviarRespuesta() {
-      const jugador = document.getElementById('nombre').value.trim();
-      const numero = parseFloat(document.getElementById('numero').value);
-
-      if (!jugador || isNaN(numero)) return alert('Completá tu nombre y respuesta');
-      if (!preguntaActual) return alert('No hay ninguna pregunta activa en este momento');
-
-      const { error } = await supabaseClient.from('respuestas').insert([{ jugador, numero }]);
-      if (error) alert('Error al enviar');
-      else document.getElementById('msj-jugador').innerText = '✅ ¡Respuesta enviada!';
-    }
-
-    function escucharRespuestas() {
-      supabaseClient.from('respuestas').select('*').then(({ data }) => {
-        respuestasLocales = data || [];
-        renderizarRespuestas();
-      });
-
-      supabaseClient.channel('respuestas_changes')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'respuestas' }, payload => {
-          respuestasLocales.push(payload.new);
-          renderizarRespuestas();
-        })
-        .subscribe();
-    }
-
-    function renderizarRespuestas() {
-      document.getElementById('count').innerText = respuestasLocales.length;
+    function renderizarRespuestasAdmin() {
+      document.getElementById('respuestas-count').innerText = respuestasLocales.length;
       document.getElementById('lista-respuestas').innerHTML = respuestasLocales
         .map(r => `<li><span>${r.jugador}</span> <strong>${r.numero}</strong></li>`).join('');
     }
 
-    // --- CÁLCULO DE GANADOR ---
-    function calcularGanador() {
-      if (!preguntaActual) return alert('No hay pregunta activa');
-      
-      const valorReal = preguntaActual.valor_real;
+    async function revelarGanador() {
+      if (!estadoActual || !estadoActual.pregunta_actual_id) return alert('No hay pregunta activa');
+
+      const { data: preg } = await supabaseClient.from('preguntas').select('valor_real').eq('id', estadoActual.pregunta_actual_id).single();
+      const valorReal = preg.valor_real;
+
+      // Actualizar estado a 'revelando'
+      await supabaseClient.from('estado_juego').update({ estado: 'revelando' }).eq('id', 1);
+
+      // Calcular ganador (más cercano sin pasarse)
       const validos = respuestasLocales.filter(r => r.numero <= valorReal);
       const divRes = document.getElementById('resultado');
 
@@ -219,11 +292,15 @@
       `;
     }
 
-    async function limpiarRespuestas() {
-      await supabaseClient.from('respuestas').delete().neq('id', 0);
-      respuestasLocales = [];
+    async function siguientePregunta() {
+      // Desactivar pregunta y dejar en espera
+      await supabaseClient.from('estado_juego').update({
+        pregunta_actual_id: null,
+        estado: 'esperando'
+      }).eq('id', 1);
+      
       document.getElementById('resultado').innerHTML = '';
-      renderizarRespuestas();
+      haRespondido = false;
     }
   </script>
 </body>
