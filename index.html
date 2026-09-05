@@ -7,33 +7,62 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body { font-family: system-ui, sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
-    .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 450px; margin: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
-    input { width: 80%; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #334155; font-size: 16px; background: #0f172a; color: white; text-align: center; }
-    button { background: #2563eb; color: white; border: none; padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; margin-top: 10px; width: 85%; }
+    .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 500px; margin: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+    input { width: 80%; padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #334155; font-size: 16px; background: #0f172a; color: white; text-align: center; }
+    button { background: #2563eb; color: white; border: none; padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; margin: 8px 0; width: 85%; }
     button:hover { background: #1d4ed8; }
+    .btn-secondary { background: #475569; font-size: 14px; width: auto; padding: 8px 16px; }
     .btn-danger { background: #dc2626; }
-    .winner { font-size: 24px; color: #4ade80; margin-top: 20px; font-weight: bold; background: #064e3b; padding: 15px; border-radius: 8px; }
-    ul { list-style: none; padding: 0; }
-    li { background: #334155; margin: 5px 0; padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; }
+    .btn-success { background: #16a34a; }
+    .winner { font-size: 22px; color: #4ade80; margin-top: 15px; font-weight: bold; background: #064e3b; padding: 15px; border-radius: 8px; }
+    ul { list-style: none; padding: 0; text-align: left; }
+    li { background: #334155; margin: 6px 0; padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+    .pregunta-box { background: #1e293b; border: 2px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size: 20px; }
   </style>
 </head>
 <body>
 
-  <div id="vista-jugador" class="card">
-    <h2>🎯 ¡A Jugar!</h2>
-    <p>Ingresá tu respuesta sin pasarte</p>
+  <div id="vista-menu" class="card">
+    <h1>🎯 Sin Pasarse</h1>
+    <p>Elegí cómo querés ingresar:</p>
+    <button onclick="mostrarVista('vista-jugador')" style="font-size: 20px; padding: 15px;">🎮 JUGAR</button>
+    <br><br>
+    <button onclick="mostrarVista('vista-admin')" class="btn-secondary">⚙️ Administración del Juego</button>
+  </div>
+
+  <div id="vista-jugador" class="card" style="display:none;">
+    <button onclick="mostrarVista('vista-menu')" class="btn-secondary">← Volver al Menú</button>
+    
+    <div id="box-pregunta-jugador" class="pregunta-box" style="margin-top: 15px;">
+      Esperando que el administrador active una pregunta...
+    </div>
+
     <input type="text" id="nombre" placeholder="Tu Nombre / Apodo">
-    <input type="number" id="numero" placeholder="Tu Número">
+    <input type="number" id="numero" placeholder="Tu Respuesta (Número)">
     <button onclick="enviarRespuesta()">Enviar Respuesta</button>
     <p id="msj-jugador" style="color: #60a5fa;"></p>
   </div>
 
-  <div id="vista-host" class="card" style="display:none; max-width: 600px;">
-    👑 <h2>Panel del Presentador</h2>
-    <input type="number" id="valor-real" placeholder="Ingresá el VALOR REAL aquí">
-    <br>
+  <div id="vista-admin" class="card" style="display:none; max-width: 650px;">
+    <button onclick="mostrarVista('vista-menu')" class="btn-secondary">← Volver al Menú</button>
+    <h2>⚙️ Panel de Administración</h2>
+
+    <div style="background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+      <h3>Crear Nueva Pregunta</h3>
+      <input type="text" id="nueva-pregunta" placeholder="Ej: ¿Cuántos escalones tiene la Torre Eiffel?">
+      <input type="number" id="nuevo-valor" placeholder="Respuesta Real (Ej: 1665)">
+      <button onclick="guardarPregunta()" class="btn-success">➕ Guardar Pregunta</button>
+    </div>
+
+    <h3>Preguntas Cargadas</h3>
+    <ul id="lista-preguntas"></ul>
+
+    <hr style="border-color: #334155; margin: 20px 0;">
+
+    <h3>Control de Ronda Activa</h3>
+    <div id="pregunta-activa-admin" class="pregunta-box">Ninguna pregunta activa</div>
     <button onclick="calcularGanador()">🔥 Revelar Ganador</button>
-    <button onclick="reiniciarRonda()" class="btn-danger">🔄 Nueva Ronda</button>
+    <button onclick="limpiarRespuestas()" class="btn-danger">🔄 Limpiar Respuestas Recibidas</button>
 
     <div id="resultado"></div>
 
@@ -43,69 +72,135 @@
 
   <script>
     // --- CONFIGURACIÓN SUPABASE ---
-    const SUPABASE_URL = "https://nwbgghnnviawepfnqktv.supabase.co";
-    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53YmdnaG5udmlhd2VwZm5xa3R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MTI4NzMsImV4cCI6MjEwMDk4ODg3M30.tk5dbetd7qxZ0xh1vZLQe71nKdGFeAO65iBZ7xUirCE";
+    const SUPABASE_URL = "TU_SUPABASE_URL";
+    const SUPABASE_KEY = "TU_SUPABASE_ANON_KEY";
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // Detectar si es Host por URL (ej: tu-app.vercel.app/?host=true)
-    const urlParams = new URLSearchParams(window.location.search);
-    const esHost = urlParams.get('host') === 'true';
+    let preguntaActual = null;
+    let respuestasLocales = [];
 
-    if (esHost) {
+    // Cambiar de vista
+    function mostrarVista(vistaId) {
+      document.getElementById('vista-menu').style.display = 'none';
       document.getElementById('vista-jugador').style.display = 'none';
-      document.getElementById('vista-host').style.display = 'block';
-      cargarRespuestas();
-      escucharRealtime();
+      document.getElementById('vista-admin').style.display = 'none';
+      document.getElementById(vistaId).style.display = 'block';
+
+      if (vistaId === 'vista-admin') cargarPreguntasAdmin();
     }
 
-    let respuestaslocales = [];
+    // Inicializar listeners en tiempo real
+    window.onload = () => {
+      escucharPreguntaActiva();
+      escucharRespuestas();
+    };
 
-    // --- LÓGICA JUGADOR ---
-    async function enviarRespuesta() {
-      const jugador = document.getElementById('nombre').value.trim();
-      const numero = parseFloat(document.getElementById('numero').value);
+    // --- LÓGICA DE PREGUNTAS (ADMIN) ---
+    async function guardarPregunta() {
+      const texto = document.getElementById('nueva-pregunta').value.trim();
+      const valor_real = parseFloat(document.getElementById('nuevo-valor').value);
 
-      if (!jugador || isNaN(numero)) return alert('Por favor completá ambos campos');
+      if (!texto || isNaN(valor_real)) return alert('Completá la pregunta y su valor real.');
 
-      const { error } = await supabaseClient.from('respuestas').insert([{ jugador, numero }]);
+      await supabaseClient.from('preguntas').insert([{ texto, valor_real, activa: false }]);
+      document.getElementById('nueva-pregunta').value = '';
+      document.getElementById('nuevo-valor').value = '';
+      cargarPreguntasAdmin();
+    }
+
+    async function cargarPreguntasAdmin() {
+      const { data } = await supabaseClient.from('preguntas').select('*').order('id', { ascending: true });
+      const lista = document.getElementById('lista-preguntas');
       
-      if (error) {
-        alert('Error al enviar');
-      } else {
-        document.getElementById('msj-jugador').innerText = '✅ ¡Respuesta enviada! Esperá los resultados.';
-      }
+      lista.innerHTML = (data || []).map(p => `
+        <li>
+          <span><strong>${p.texto}</strong> (Real: ${p.valor_real})</span>
+          <button onclick="activarPregunta(${p.id}, '${p.texto}', ${p.valor_real})" class="btn-success" style="width:auto; padding:5px 10px; margin:0;">
+            ${p.activa ? '✅ Activa' : '🚀 Lanza'}
+          </button>
+        </li>
+      `).join('');
     }
 
-    // --- LÓGICA HOST ---
-    async function cargarRespuestas() {
-      const { data } = await supabaseClient.from('respuestas').select('*');
-      respuestaslocales = data || [];
-      renderizarLista();
+    async function activarPregunta(id, texto, valorReal) {
+      // Desactivar todas y activar la seleccionada
+      await supabaseClient.from('preguntas').update({ activa: false }).neq('id', 0);
+      await supabaseClient.from('preguntas').update({ activa: true }).eq('id', id);
+      
+      limpiarRespuestas();
+      cargarPreguntasAdmin();
     }
 
-    function escucharRealtime() {
-      supabaseClient.channel('respuestas')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'respuestas' }, payload => {
-          respuestaslocales.push(payload.new);
-          renderizarLista();
+    function escucharPreguntaActiva() {
+      // Cargar pregunta activa inicial
+      supabaseClient.from('preguntas').select('*').eq('activa', true).then(({ data }) => {
+        if (data && data.length > 0) actualizarPreguntaEnPantalla(data[0]);
+      });
+
+      // Escuchar cambios
+      supabaseClient.channel('preguntas_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'preguntas' }, () => {
+          supabaseClient.from('preguntas').select('*').eq('activa', true).then(({ data }) => {
+            if (data && data.length > 0) actualizarPreguntaEnPantalla(data[0]);
+            else actualizarPreguntaEnPantalla(null);
+          });
         })
         .subscribe();
     }
 
-    function renderizarLista() {
-      const lista = document.getElementById('lista-respuestas');
-      document.getElementById('count').innerText = respuestaslocales.length;
-      lista.innerHTML = respuestaslocales.map(r => `<li><span>${r.jugador}</span> <strong>${r.numero}</strong></li>`).join('');
+    function actualizarPreguntaEnPantalla(p) {
+      preguntaActual = p;
+      const txtJugador = document.getElementById('box-pregunta-jugador');
+      const txtAdmin = document.getElementById('pregunta-activa-admin');
+
+      if (p) {
+        txtJugador.innerText = `❓ ${p.texto}`;
+        txtAdmin.innerText = `❓ ${p.texto} (Valor Real: ${p.valor_real})`;
+      } else {
+        txtJugador.innerText = 'Esperando que el administrador active una pregunta...';
+        txtAdmin.innerText = 'Ninguna pregunta activa';
+      }
     }
 
-    // --- MOTOR DEL JUEGO (EL MÁS CERCANO SIN PASARSE) ---
+    // --- LÓGICA DE RESPUESTAS ---
+    async function enviarRespuesta() {
+      const jugador = document.getElementById('nombre').value.trim();
+      const numero = parseFloat(document.getElementById('numero').value);
+
+      if (!jugador || isNaN(numero)) return alert('Completá tu nombre y respuesta');
+      if (!preguntaActual) return alert('No hay ninguna pregunta activa en este momento');
+
+      const { error } = await supabaseClient.from('respuestas').insert([{ jugador, numero }]);
+      if (error) alert('Error al enviar');
+      else document.getElementById('msj-jugador').innerText = '✅ ¡Respuesta enviada!';
+    }
+
+    function escucharRespuestas() {
+      supabaseClient.from('respuestas').select('*').then(({ data }) => {
+        respuestasLocales = data || [];
+        renderizarRespuestas();
+      });
+
+      supabaseClient.channel('respuestas_changes')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'respuestas' }, payload => {
+          respuestasLocales.push(payload.new);
+          renderizarRespuestas();
+        })
+        .subscribe();
+    }
+
+    function renderizarRespuestas() {
+      document.getElementById('count').innerText = respuestasLocales.length;
+      document.getElementById('lista-respuestas').innerHTML = respuestasLocales
+        .map(r => `<li><span>${r.jugador}</span> <strong>${r.numero}</strong></li>`).join('');
+    }
+
+    // --- CÁLCULO DE GANADOR ---
     function calcularGanador() {
-      const valorReal = parseFloat(document.getElementById('valor-real').value);
-      if (isNaN(valorReal)) return alert('Ingresá el valor real primero');
-
-      // 1. Filtrar los que NO se pasaron
-      const validos = respuestaslocales.filter(r => r.numero <= valorReal);
-
+      if (!preguntaActual) return alert('No hay pregunta activa');
+      
+      const valorReal = preguntaActual.valor_real;
+      const validos = respuestasLocales.filter(r => r.numero <= valorReal);
       const divRes = document.getElementById('resultado');
 
       if (validos.length === 0) {
@@ -113,7 +208,6 @@
         return;
       }
 
-      // 2. Ordenar de mayor a menor (el número más alto que no se pasó es el ganador)
       validos.sort((a, b) => b.numero - a.numero);
       const ganador = validos[0];
 
@@ -125,13 +219,11 @@
       `;
     }
 
-    async function reiniciarRonda() {
-      if (!confirm('¿Limpiar todas las respuestas para la siguiente pregunta?')) return;
+    async function limpiarRespuestas() {
       await supabaseClient.from('respuestas').delete().neq('id', 0);
-      respuestaslocales = [];
-      document.getElementById('valor-real').value = '';
+      respuestasLocales = [];
       document.getElementById('resultado').innerHTML = '';
-      renderizarLista();
+      renderizarRespuestas();
     }
   </script>
 </body>
