@@ -105,6 +105,8 @@
   let estadoActual = null;
   let preguntasBanco = [];
   let respuestasLocales = [];
+  let totalJugadores = 0;
+  let ultimaPreguntaId = null;
   let haRespondido = false;
 
   function mostrarVista(vistaId) {
@@ -121,6 +123,7 @@
   };
 
   function sincronizarEstado() {
+    // Escuchar estado
     supabaseClient.channel('estado_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'estado_juego' }, payload => {
         procesarEstado(payload.new);
@@ -130,10 +133,16 @@
       if (data) procesarEstado(data);
     });
 
+    // Escuchar respuestas entrantes
     supabaseClient.channel('respuestas_changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'respuestas' }, payload => {
-        respuestasLocales.push(payload.new);
-        renderizarRespuestasAdmin();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'respuestas' }, () => {
+        cargarRespuestasActuales();
+      }).subscribe();
+
+    // Escuchar jugadores registrados
+    supabaseClient.channel('jugadores_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores' }, () => {
+        contarJugadores();
       }).subscribe();
   }
 
@@ -146,7 +155,15 @@
       pregunta = data;
     }
 
-    // Actualizar Vista Jugador
+    // RESETEAR ESTADO SI CAMBIÓ LA PREGUNTA
+    if (pregunta && pregunta.id !== ultimaPreguntaId) {
+      ultimaPreguntaId = pregunta.id;
+      haRespondido = false;
+      document.getElementById('numero-respuesta').value = '';
+      document.getElementById('msj-jugador').innerText = '';
+    }
+
+    // Vista Jugador
     const boxJugador = document.getElementById('box-pregunta-jugador');
     const btnEnviar = document.getElementById('btn-enviar');
 
@@ -155,15 +172,13 @@
       document.getElementById('msj-jugador').innerText = "";
     } else if (estado.estado === 'jugando') {
       boxJugador.innerText = `❓ ${pregunta.texto}`;
-      if (!haRespondido) {
-        btnEnviar.disabled = false;
-        document.getElementById('msj-jugador').innerText = "";
-      }
+      btnEnviar.disabled = haRespondido;
     } else if (estado.estado === 'revelando') {
       boxJugador.innerText = `❓ ${pregunta.texto} (Respuesta Real: ${pregunta.valor_real})`;
+      btnEnviar.disabled = true;
     }
 
-    // Actualizar Vista Admin
+    // Vista Admin
     const boxAdmin = document.getElementById('admin-pregunta-activa');
     if (pregunta) {
       boxAdmin.innerText = `❓ ${pregunta.texto} | Respuesta Real: ${pregunta.valor_real}`;
@@ -173,17 +188,22 @@
   }
 
   // --- LÓGICA JUGADOR ---
-  function registrarJugador() {
+  async function registrarJugador() {
     const nombre = document.getElementById('nombre-jugador').value.trim();
     if (!nombre) return alert('Ingresá tu apodo');
     miNombre = nombre;
+
+    await supabaseClient.from('jugadores').upsert([{ nombre: miNombre }]);
+
     document.getElementById('mi-nombre').innerText = `Jugador: ${miNombre}`;
     document.getElementById('form-registro').style.display = 'none';
     document.getElementById('panel-juego-jugador').style.display = 'block';
   }
 
   async function enviarRespuesta() {
-    const numero = parseFloat(document.getElementById('numero-respuesta').value);
+    const numeroInput = document.getElementById('numero-respuesta');
+    const numero = parseFloat(numeroInput.value);
+
     if (isNaN(numero)) return alert('Ingresá un número válido');
     if (!estadoActual || !estadoActual.pregunta_actual_id) return alert('No hay pregunta activa');
 
@@ -204,11 +224,17 @@
 
   // --- LÓGICA ADMIN ---
   async function cargarAdmin() {
-    const { data, error } = await supabaseClient.from('preguntas').select('*').order('id', { ascending: true });
-    if (error) console.error(error);
+    const { data } = await supabaseClient.from('preguntas').select('*').order('id', { ascending: true });
     preguntasBanco = data || [];
     renderizarPreguntasAdmin();
     cargarRespuestasActuales();
+    contarJugadores();
+  }
+
+  async function contarJugadores() {
+    const { count } = await supabaseClient.from('jugadores').select('*', { count: 'exact', head: true });
+    totalJugadores = count || 0;
+    renderizarRespuestasAdmin();
   }
 
   async function guardarPregunta() {
@@ -238,18 +264,11 @@
     await supabaseClient.from('preguntas').update({ seleccionada: checked }).eq('id', id);
   }
 
-  // BOTÓN INICIAR JUEGO CORREGIDO
   async function iniciarJuego() {
-    try {
-      const { data, error } = await supabaseClient.from('preguntas').select('*').eq('seleccionada', true).order('id', { ascending: true });
-      
-      if (error) throw error;
-      if (!data || data.length === 0) return alert('Atención: Tildá al menos un casillero de las preguntas arriba para iniciar.');
+    const { data } = await supabaseClient.from('preguntas').select('*').eq('seleccionada', true).order('id', { ascending: true });
+    if (!data || data.length === 0) return alert('Atención: Tildá al menos un casillero para iniciar.');
 
-      lanzarPreguntaEspecifica(data[0].id, 0);
-    } catch (err) {
-      alert("Error al iniciar el juego: " + err.message);
-    }
+    lanzarPreguntaEspecifica(data[0].id, 0);
   }
 
   async function siguientePregunta() {
@@ -271,18 +290,14 @@
   async function lanzarPreguntaEspecifica(preguntaId, indice) {
     await supabaseClient.from('respuestas').delete().neq('id', 0);
     respuestasLocales = [];
-    haRespondido = false;
     document.getElementById('resultado').innerHTML = '';
-    document.getElementById('numero-respuesta').value = '';
     renderizarRespuestasAdmin();
 
-    const { error } = await supabaseClient.from('estado_juego').update({
+    await supabaseClient.from('estado_juego').update({
       pregunta_actual_id: preguntaId,
       estado: 'jugando',
       indice_pregunta: indice
     }).eq('id', 1);
-
-    if (error) alert("Error al lanzar pregunta: " + error.message);
   }
 
   async function cargarRespuestasActuales() {
@@ -292,7 +307,15 @@
   }
 
   function renderizarRespuestasAdmin() {
-    document.getElementById('respuestas-count').innerText = respuestasLocales.length;
+    const countSpan = document.getElementById('respuestas-count');
+    const respondieron = respuestasLocales.length;
+
+    if (totalJugadores > 0 && respondieron >= totalJugadores) {
+      countSpan.innerHTML = `${respondieron} de ${totalJugadores} <span style="color:#4ade80; font-weight:bold;">🟢 ¡Todos respondieron!</span>`;
+    } else {
+      countSpan.innerText = `${respondieron} / ${totalJugadores} registrados`;
+    }
+
     document.getElementById('lista-respuestas').innerHTML = respuestasLocales
       .map(r => `<li><span>${r.jugador}</span> <strong>${r.numero}</strong></li>`).join('');
   }
