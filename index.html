@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body { font-family: system-ui, sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
-    .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 550px; margin: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
     input { width: 80%; padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #334155; font-size: 16px; background: #0f172a; color: white; text-align: center; }
     button { background: #2563eb; color: white; border: none; padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; margin: 8px 0; width: 85%; }
     button:hover { background: #1d4ed8; }
@@ -19,7 +19,7 @@
     ul { list-style: none; padding: 0; text-align: left; }
     li { background: #334155; margin: 6px 0; padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
     .pregunta-box { background: #0f172a; border: 2px solid #3b82f6; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 20px; }
-    .status-pill { background: #334155; padding: 4px 12px; border-radius: 20px; font-size: 14px; }
+    .checkbox-custom { width: 20px; height: 20px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -37,19 +37,17 @@
   <div id="vista-jugador" class="card" style="display:none;">
     <button onclick="mostrarVista('vista-menu')" class="btn-secondary">← Volver al Menú</button>
     
-    <!-- Login de jugador -->
     <div id="form-registro" style="margin-top: 15px;">
       <h3>Ingresá a la sala</h3>
       <input type="text" id="nombre-jugador" placeholder="Tu Nombre / Apodo">
       <button onclick="registrarJugador()">Unirme al Juego</button>
     </div>
 
-    <!-- Pantalla de Juego en vivo -->
     <div id="panel-juego-jugador" style="display:none;">
-      <p><span class="status-pill" id="mi-nombre"></span></p>
+      <p style="color: #60a5fa; font-weight: bold;" id="mi-nombre"></p>
       
       <div id="box-pregunta-jugador" class="pregunta-box">
-        Esperando que el administrador inicie...
+        Esperando que el administrador inicie el juego...
       </div>
 
       <div id="controles-respuesta">
@@ -62,26 +60,29 @@
   </div>
 
   <!-- 3. VISTA ADMINISTRACIÓN -->
-  <div id="vista-admin" class="card" style="display:none; max-width: 650px;">
+  <div id="vista-admin" class="card" style="display:none;">
     <button onclick="mostrarVista('vista-menu')" class="btn-secondary">← Volver al Menú</button>
     <h2>⚙️ Panel de Administración</h2>
 
     <!-- Crear Pregunta -->
     <div style="background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-      <h3>1. Banco de Preguntas</h3>
+      <h3>1. Crear Pregunta</h3>
       <input type="text" id="nueva-pregunta" placeholder="Ej: ¿Cuántos habitantes tiene Argentina?">
       <input type="number" id="nuevo-valor" placeholder="Respuesta Real (Ej: 46)">
       <button onclick="guardarPregunta()" class="btn-success">➕ Guardar Pregunta</button>
     </div>
 
-    <h3>Preguntas Creadas</h3>
+    <h3>2. Seleccionar Preguntas para la Partida</h3>
+    <p style="font-size:14px; color:#94a3b8;">Marcá los casilleros de las preguntas que querés incluir:</p>
     <ul id="lista-preguntas"></ul>
 
     <hr style="border-color: #334155; margin: 20px 0;">
 
     <!-- Control del Juego -->
-    <h3>2. Control del Juego en Vivo</h3>
-    <div id="admin-pregunta-activa" class="pregunta-box">Sin pregunta activa</div>
+    <h3>3. Control del Juego en Vivo</h3>
+    <button id="btn-iniciar-juego" onclick="iniciarJuego()" class="btn-success" style="font-size: 18px; padding: 12px;">🚀 INICIAR JUEGO CON SELECCIONADAS</button>
+    
+    <div id="admin-pregunta-activa" class="pregunta-box">Sin juego activo</div>
 
     <div style="display: flex; gap: 10px; justify-content: center;">
       <button onclick="revelarGanador()" class="btn-success">🔥 Revelar Ganador</button>
@@ -103,6 +104,7 @@
     let miNombre = "";
     let estadoActual = null;
     let preguntasBanco = [];
+    let preguntasSeleccionadas = [];
     let respuestasLocales = [];
     let haRespondido = false;
 
@@ -119,20 +121,16 @@
       sincronizarEstado();
     };
 
-    // --- SINCRONIZACIÓN EN TIEMPO REAL ---
     function sincronizarEstado() {
-      // Escuchar cambios en la tabla de estado
       supabaseClient.channel('estado_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'estado_juego' }, payload => {
           procesarEstado(payload.new);
         }).subscribe();
 
-      // Cargar estado inicial
-      supabaseClient.from('estado_juego').select('*, preguntas(*)').eq('id', 1).single().then(({ data }) => {
+      supabaseClient.from('estado_juego').select('*').eq('id', 1).single().then(({ data }) => {
         if (data) procesarEstado(data);
       });
 
-      // Escuchar respuestas entrantes
       supabaseClient.channel('respuestas_changes')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'respuestas' }, payload => {
           respuestasLocales.push(payload.new);
@@ -143,14 +141,13 @@
     async function procesarEstado(estado) {
       estadoActual = estado;
 
-      // Obtener datos de la pregunta actual si existe
       let pregunta = null;
       if (estado.pregunta_actual_id) {
         const { data } = await supabaseClient.from('preguntas').select('*').eq('id', estado.pregunta_actual_id).single();
         pregunta = data;
       }
 
-      // Actualizar Vista Jugador
+      // Actualizar Jugador
       const boxJugador = document.getElementById('box-pregunta-jugador');
       const btnEnviar = document.getElementById('btn-enviar');
 
@@ -167,12 +164,12 @@
         boxJugador.innerText = `❓ ${pregunta.texto} (Respuesta Real: ${pregunta.valor_real})`;
       }
 
-      // Actualizar Vista Admin
+      // Actualizar Admin
       const boxAdmin = document.getElementById('admin-pregunta-activa');
       if (pregunta) {
         boxAdmin.innerText = `❓ ${pregunta.texto} | Respuesta Real: ${pregunta.valor_real}`;
       } else {
-        boxAdmin.innerText = "Sin pregunta activa";
+        boxAdmin.innerText = "Sin pregunta activa en la partida";
       }
     }
 
@@ -200,7 +197,9 @@
       if (!error) {
         haRespondido = true;
         document.getElementById('btn-enviar').disabled = true;
-        document.getElementById('msj-jugador').innerText = "✅ Respuesta registrada. Esperando a los demás...";
+        document.getElementById('msj-jugador').innerText = "✅ Respuesta enviada. Esperando resultados...";
+      } else {
+        alert("Error al enviar la respuesta.");
       }
     }
 
@@ -217,7 +216,7 @@
       const valor_real = parseFloat(document.getElementById('nuevo-valor').value);
       if (!texto || isNaN(valor_real)) return alert('Completá los campos');
 
-      await supabaseClient.from('preguntas').insert([{ texto, valor_real }]);
+      await supabaseClient.from('preguntas').insert([{ texto, valor_real, seleccionada: true }]);
       document.getElementById('nueva-pregunta').value = '';
       document.getElementById('nuevo-valor').value = '';
       cargarAdmin();
@@ -228,15 +227,43 @@
       lista.innerHTML = preguntasBanco.map(p => `
         <li>
           <span><strong>${p.texto}</strong> (Real: ${p.valor_real})</span>
-          <button onclick="lanzarPregunta(${p.id})" class="btn-success" style="width:auto; padding:5px 12px; margin:0;">
-            🚀 Lanzar a Todos
-          </button>
+          <input type="checkbox" class="checkbox-custom" ${p.seleccionada ? 'checked' : ''} onchange="toggleSeleccion(${p.id}, this.checked)">
         </li>
       `).join('');
     }
 
-    async function lanzarPregunta(preguntaId) {
-      // Limpiar respuestas anteriores en la base de datos
+    async function toggleSeleccion(id, checked) {
+      await supabaseClient.from('preguntas').update({ seleccionada: checked }).eq('id', id);
+    }
+
+    async function iniciarJuego() {
+      // Cargar preguntas seleccionadas
+      const { data } = await supabaseClient.from('preguntas').select('*').eq('seleccionada', true).order('id', { ascending: true });
+      if (!data || data.length === 0) return alert('Seleccioná al menos una pregunta para jugar.');
+
+      preguntasSeleccionadas = data;
+
+      // Iniciar en la primera pregunta
+      lanzarPreguntaEspecifica(preguntasSeleccionadas[0].id, 0);
+    }
+
+    async function siguientePregunta() {
+      const { data } = await supabaseClient.from('preguntas').select('*').eq('seleccionada', true).order('id', { ascending: true });
+      if (!data || data.length === 0) return alert('No hay preguntas seleccionadas.');
+
+      let siguienteIndice = (estadoActual ? estadoActual.indice_pregunta : 0) + 1;
+
+      if (siguienteIndice >= data.length) {
+        alert('🎉 ¡Llegaste al final de todas las preguntas seleccionadas!');
+        await supabaseClient.from('estado_juego').update({ pregunta_actual_id: null, estado: 'finalizado', indice_pregunta: 0 }).eq('id', 1);
+        document.getElementById('resultado').innerHTML = '';
+        return;
+      }
+
+      lanzarPreguntaEspecifica(data[siguienteIndice].id, siguienteIndice);
+    }
+
+    async function lanzarPreguntaEspecifica(preguntaId, indice) {
       await supabaseClient.from('respuestas').delete().neq('id', 0);
       respuestasLocales = [];
       haRespondido = false;
@@ -244,10 +271,10 @@
       document.getElementById('numero-respuesta').value = '';
       renderizarRespuestasAdmin();
 
-      // Cambiar estado global a 'jugando' con la nueva pregunta
       await supabaseClient.from('estado_juego').update({
         pregunta_actual_id: preguntaId,
-        estado: 'jugando'
+        estado: 'jugando',
+        indice_pregunta: indice
       }).eq('id', 1);
     }
 
@@ -269,10 +296,8 @@
       const { data: preg } = await supabaseClient.from('preguntas').select('valor_real').eq('id', estadoActual.pregunta_actual_id).single();
       const valorReal = preg.valor_real;
 
-      // Actualizar estado a 'revelando'
       await supabaseClient.from('estado_juego').update({ estado: 'revelando' }).eq('id', 1);
 
-      // Calcular ganador (más cercano sin pasarse)
       const validos = respuestasLocales.filter(r => r.numero <= valorReal);
       const divRes = document.getElementById('resultado');
 
@@ -290,17 +315,6 @@
           Dijo ${ganador.numero} (Valor real: ${valorReal})
         </div>
       `;
-    }
-
-    async function siguientePregunta() {
-      // Desactivar pregunta y dejar en espera
-      await supabaseClient.from('estado_juego').update({
-        pregunta_actual_id: null,
-        estado: 'esperando'
-      }).eq('id', 1);
-      
-      document.getElementById('resultado').innerHTML = '';
-      haRespondido = false;
     }
   </script>
 </body>
